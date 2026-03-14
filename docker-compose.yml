@@ -1,0 +1,9 @@
+services:
+  
+  model_training:
+    build: .
+    working_dir: /app
+    volumes:
+      - .:/app
+    entrypoint: []
+    command: []

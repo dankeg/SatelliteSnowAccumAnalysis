@@ -1,0 +1,6 @@
+snow_dataset_small/
+remote_run_artifacts/
+
+.vscode/
+__pycache__/
+*.pyc

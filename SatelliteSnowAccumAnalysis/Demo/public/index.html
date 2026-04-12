@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>ML Demo</title>
+    <style>
+      body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; }
+      textarea { width: 100%; height: 120px; }
+      button { margin-top: 12px; padding: 8px 14px; }
+      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; }
+    </style>
+  </head>
+  <body>
+    <h1>Time-Series CNN Demo</h1>
+    <p>Enter 20 comma-separated values.</p>
+
+    <textarea id="series">0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1,0.0</textarea>
+    <br />
+    <button id="predictBtn">Predict</button>
+
+    <h2>Result</h2>
+    <pre id="output">Waiting...</pre>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

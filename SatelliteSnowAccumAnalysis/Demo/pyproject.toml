@@ -5,4 +5,8 @@ requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.121.0",
   "uvicorn>=0.34.0",
+  "numpy>=2.0.0",
+  "pillow>=11.0.0",
+  "onnxruntime>=1.20.0",
+  "python-multipart>=0.0.20",
 ]

@@ -2,10 +2,11 @@
 DS4520 Project for Predicting Changes in Snow Accumulation from Satellite Imagery!
 
 ## Initial Project Structure
-The project currently has 3 modules:
+The core training and inference code currently lives in:
 - Bayesian_Predictor.py
-- CNN_Predictor.py
 - ImageDataset.py
+- cnn_segmentation.py
+- cnn_training.py
 
 A docker container is provided to abstract out environment setup.
 To launch any file in docker, you can run:
@@ -14,7 +15,13 @@ To launch any file in docker, you can run:
 
 Alternatively, the requirements file can be used for a local installation.
 
+For the Vercel demo and local inference:
+
 `pip install -r requirements.txt`
+
+For training and dataset work:
+
+`pip install -r requirements-training.txt`
 
 ## Fetching Data
 Data fetching occurs from the Sentinel Satellite Data Catalog. Metadata such as pre-existing weather data, image city/location, date ranges, and image sizing and chunking settings are used to target images that are most likely to have snowfall, and retrieve them for training and testing the CNN model.
@@ -28,7 +35,7 @@ The CNN uses a UNet style architecture, that has been slimmed down in size.
 Research shows that UNets are ideal for pixel classification / masking tasks.
 
 To run the CNN, run the following from the root of the repo:
-`python SatelliteSnowAccumAnalysis/Training/CNN_Predictor.py`
+`python SatelliteSnowAccumAnalysis/Training/cnn_training.py`
 
 It will train the model, run validation, export performance metrics over epochs, and save the model to disk:
 

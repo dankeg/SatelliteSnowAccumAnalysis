@@ -1,26 +1,242 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>ML Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snow Segmentation Demo</title>
     <style>
-      body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; }
-      textarea { width: 100%; height: 120px; }
-      button { margin-top: 12px; padding: 8px 14px; }
-      pre { background: #f4f4f4; padding: 12px; border-radius: 8px; }
+      :root {
+        color-scheme: light;
+        --bg: #09121f;
+        --panel: #111b2d;
+        --panel-2: #16233a;
+        --text: #eef4ff;
+        --muted: #a9b7d1;
+        --accent: #7dd3fc;
+        --accent-2: #c4b5fd;
+        --border: rgba(255, 255, 255, 0.09);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(125, 211, 252, 0.2), transparent 30%),
+          radial-gradient(circle at top right, rgba(196, 181, 253, 0.18), transparent 25%),
+          linear-gradient(180deg, #08111d 0%, #0b1424 100%);
+        min-height: 100vh;
+      }
+
+      .shell {
+        width: min(1100px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+      }
+
+      header {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        letter-spacing: -0.04em;
+      }
+
+      .subtitle {
+        margin: 0;
+        max-width: 72ch;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .card {
+        background: linear-gradient(180deg, rgba(17, 27, 45, 0.94), rgba(12, 19, 32, 0.96));
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .dropzone {
+        border: 1.5px dashed rgba(125, 211, 252, 0.35);
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 16px;
+        padding: 18px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .dropzone strong {
+        font-size: 1rem;
+      }
+
+      input[type="file"] {
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 999px;
+        padding: 11px 18px;
+        font-weight: 700;
+        color: #08111d;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.93rem;
+        line-height: 1.5;
+      }
+
+      .preview,
+      .mask {
+        display: grid;
+        gap: 12px;
+      }
+
+      .image-frame {
+        border-radius: 16px;
+        overflow: hidden;
+        background: var(--panel-2);
+        min-height: 320px;
+        border: 1px solid var(--border);
+        display: grid;
+        place-items: center;
+      }
+
+      .image-frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+
+      pre {
+        margin: 0;
+        padding: 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.04);
+        color: #d9e6ff;
+        overflow: auto;
+        min-height: 160px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(125, 211, 252, 0.12);
+        color: #d4f4ff;
+        font-size: 0.9rem;
+      }
+
+      @media (max-width: 860px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1>Time-Series CNN Demo</h1>
-    <p>Enter 20 comma-separated values.</p>
+    <main class="shell">
+      <header>
+        <div class="pill">Snow mask inference</div>
+        <h1>Upload an image and run the segmentation CNN</h1>
+        <p class="subtitle">
+          This demo uses the trained UNet-like snow segmentation model from the training directory.
+          For best results, upload a Sentinel-style 6-band patch file such as `.npz` with an `image`
+          array. Standard image files will still run through a fallback preprocessing path for quick
+          testing.
+        </p>
+      </header>
 
-    <textarea id="series">0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0,0.9,0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1,0.0</textarea>
-    <br />
-    <button id="predictBtn">Predict</button>
+      <section class="grid">
+        <div class="card stack">
+          <div class="dropzone">
+            <strong>Select an image</strong>
+            <input id="imageFile" type="file" accept=".npz,.png,.jpg,.jpeg,.webp,.tif,.tiff,image/*" />
+            <div class="hint">
+              The backend returns the predicted snow mask and an overlay. If you upload a regular
+              RGB image, the model still runs, but the result is only a rough proxy because the
+              network was trained on 6-band satellite data.
+            </div>
+          </div>
 
-    <h2>Result</h2>
-    <pre id="output">Waiting...</pre>
+          <div class="actions">
+            <button id="predictBtn" disabled>Run model</button>
+            <span id="status" class="hint">No file selected.</span>
+          </div>
+
+          <div class="preview">
+            <h2 style="margin: 0;">Input preview</h2>
+            <div class="image-frame">
+              <img id="inputPreview" alt="Selected input preview" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card stack">
+          <div class="mask">
+            <h2 style="margin: 0;">Snow mask</h2>
+            <div class="image-frame">
+              <img id="maskPreview" alt="Predicted snow mask" />
+            </div>
+          </div>
+
+          <div class="mask">
+            <h2 style="margin: 0;">Overlay</h2>
+            <div class="image-frame">
+              <img id="overlayPreview" alt="Overlay of snow prediction" />
+            </div>
+          </div>
+
+          <div>
+            <h2 style="margin: 0 0 10px;">Response</h2>
+            <pre id="output">Waiting for an upload...</pre>
+          </div>
+        </div>
+      </section>
+    </main>
 
     <script src="/app.js"></script>
   </body>
 </html>
+

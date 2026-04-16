@@ -1,6 +1,8 @@
 snow_dataset_small/
 remote_run_artifacts/
+*.csv
 
 .vscode/
 __pycache__/
 *.pyc
+csv_prediction_maps

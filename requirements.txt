@@ -1,9 +1,6 @@
-torch
-torchvision
-torchaudio
+fastapi
+uvicorn
+python-multipart
 numpy
-scikit-learn
-matplotlib
-tqdm
-pyyaml
 pillow
+onnxruntime

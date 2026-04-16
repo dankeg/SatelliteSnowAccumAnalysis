@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Snow Segmentation Demo - Run</title>
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1f2937;
+        --muted: #4b5563;
+        --border: #d1d5db;
+        --link: #1d4ed8;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
+        background: var(--bg);
+      }
+
+      .shell {
+        width: min(1200px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 44px;
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: start;
+        margin-bottom: 20px;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(1.8rem, 3vw, 2.6rem);
+        line-height: 1.15;
+      }
+
+      .subtitle {
+        margin: 10px 0 0;
+        max-width: 76ch;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      a.back {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        color: var(--text);
+        text-decoration: none;
+        background: #fff;
+        white-space: nowrap;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 16px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      label {
+        display: grid;
+        gap: 8px;
+        font-size: 0.95rem;
+      }
+
+      select,
+      button {
+        font: inherit;
+      }
+
+      select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--text);
+      }
+
+      .sample-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .sample-card {
+        padding: 0;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fff;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .sample-card.active {
+        border-color: var(--link);
+      }
+
+      .sample-card img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        display: block;
+      }
+
+      .sample-card span {
+        display: block;
+        padding: 8px 10px;
+        font-size: 0.8rem;
+        color: var(--muted);
+        line-height: 1.3;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+
+      button.run {
+        padding: 10px 16px;
+        border: 1px solid var(--link);
+        border-radius: 8px;
+        background: var(--link);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.run:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .hint {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .frame {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fafafa;
+        min-height: 300px;
+        overflow: hidden;
+      }
+
+      .frame img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      .placeholder {
+        height: 100%;
+        min-height: 300px;
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        padding: 16px;
+        text-align: center;
+      }
+
+      pre {
+        margin: 0;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fafafa;
+        min-height: 150px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      details.response {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      details.response > summary {
+        cursor: pointer;
+        list-style: none;
+        padding: 12px 14px;
+        font-weight: 600;
+      }
+
+      details.response > summary::-webkit-details-marker {
+        display: none;
+      }
+
+      details.response .response-body {
+        padding: 0 14px 14px;
+      }
+
+      @media (max-width: 960px) {
+        .grid,
+        .preview-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div>
+          <h1>Run the snow model</h1>
+          <p class="subtitle">
+            Pick a city, choose one of the saved images, and run the model. The page resets the
+            result area when you switch samples, so it is easy to try another image after each run.
+          </p>
+        </div>
+        <a class="back" href="/">Back to home</a>
+      </header>
+
+      <section class="grid">
+        <div class="card stack">
+          <label>
+            City
+            <select id="citySelect"></select>
+          </label>
+
+          <div>
+            <h2 style="margin-bottom: 8px;">Samples</h2>
+            <div id="sampleGrid" class="sample-grid" aria-label="City sample gallery"></div>
+          </div>
+
+          <div class="actions">
+            <button id="runBtn" class="run" disabled>Run model</button>
+            <span id="status" class="hint">Loading sample imagery...</span>
+          </div>
+
+          <div>
+            <h2 style="margin-bottom: 8px;">Selected image</h2>
+            <div class="frame">
+              <img id="inputPreview" alt="Selected sample preview" />
+              <div id="inputPlaceholder" class="placeholder">Choose a sample to preview it here.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card stack">
+          <div>
+            <h2 style="margin-bottom: 8px;">Snow mask</h2>
+            <div class="frame">
+              <img id="maskPreview" alt="Predicted snow mask" hidden />
+              <div id="maskPlaceholder" class="placeholder">The snow mask will appear here after a run.</div>
+            </div>
+          </div>
+
+          <div>
+            <h2 style="margin-bottom: 8px;">Overlay</h2>
+            <div class="frame">
+              <img id="overlayPreview" alt="Overlay of snow prediction" hidden />
+              <div id="overlayPlaceholder" class="placeholder">The overlay will appear here after a run.</div>
+            </div>
+          </div>
+
+          <div>
+            <details class="response">
+              <summary>Response body</summary>
+              <div class="response-body">
+                <pre id="output">Waiting for a sample run...</pre>
+              </div>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

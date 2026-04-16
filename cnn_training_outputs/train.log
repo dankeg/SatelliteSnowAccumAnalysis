@@ -1,0 +1,12 @@
+Epoch 1 | Train Loss: 0.0787 | Val Loss: 0.1361 | Train Acc: 0.9704 | Val Acc: 0.9383 | Train F1: 0.9737 | Val F1: 0.9540 | Val IoU: 0.9120
+Epoch 2 | Train Loss: 0.0490 | Val Loss: 0.1167 | Train Acc: 0.9804 | Val Acc: 0.9473 | Train F1: 0.9826 | Val F1: 0.9608 | Val IoU: 0.9245
+Epoch 3 | Train Loss: 0.0439 | Val Loss: 0.1242 | Train Acc: 0.9820 | Val Acc: 0.9408 | Train F1: 0.9840 | Val F1: 0.9549 | Val IoU: 0.9137
+Epoch 4 | Train Loss: 0.0422 | Val Loss: 0.1131 | Train Acc: 0.9826 | Val Acc: 0.9468 | Train F1: 0.9845 | Val F1: 0.9600 | Val IoU: 0.9231
+Epoch 5 | Train Loss: 0.0400 | Val Loss: 0.1061 | Train Acc: 0.9833 | Val Acc: 0.9496 | Train F1: 0.9851 | Val F1: 0.9620 | Val IoU: 0.9267
+Epoch 6 | Train Loss: 0.0390 | Val Loss: 0.1004 | Train Acc: 0.9836 | Val Acc: 0.9546 | Train F1: 0.9854 | Val F1: 0.9663 | Val IoU: 0.9347
+Epoch 7 | Train Loss: 0.0384 | Val Loss: 0.1244 | Train Acc: 0.9838 | Val Acc: 0.9425 | Train F1: 0.9856 | Val F1: 0.9560 | Val IoU: 0.9157
+Epoch 8 | Train Loss: 0.0375 | Val Loss: 0.1030 | Train Acc: 0.9841 | Val Acc: 0.9524 | Train F1: 0.9858 | Val F1: 0.9646 | Val IoU: 0.9317
+Epoch 9 | Train Loss: 0.0370 | Val Loss: 0.1051 | Train Acc: 0.9843 | Val Acc: 0.9529 | Train F1: 0.9860 | Val F1: 0.9644 | Val IoU: 0.9312
+Epoch 10 | Train Loss: 0.0368 | Val Loss: 0.1073 | Train Acc: 0.9844 | Val Acc: 0.9503 | Train F1: 0.9861 | Val F1: 0.9626 | Val IoU: 0.9279
+
+Saved outputs to: /root/project/cnn_training_outputs

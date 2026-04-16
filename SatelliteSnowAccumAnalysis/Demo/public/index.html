@@ -3,18 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Snow Segmentation Demo</title>
+    <title>Snow Accum Analysis Segmentation Demo</title>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #09121f;
-        --panel: #111b2d;
-        --panel-2: #16233a;
-        --text: #eef4ff;
-        --muted: #a9b7d1;
-        --accent: #7dd3fc;
-        --accent-2: #c4b5fd;
-        --border: rgba(255, 255, 255, 0.09);
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1f2937;
+        --muted: #4b5563;
+        --border: #d1d5db;
+        --link: #1d4ed8;
       }
 
       * {
@@ -23,153 +20,88 @@
 
       body {
         margin: 0;
-        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(125, 211, 252, 0.2), transparent 30%),
-          radial-gradient(circle at top right, rgba(196, 181, 253, 0.18), transparent 25%),
-          linear-gradient(180deg, #08111d 0%, #0b1424 100%);
-        min-height: 100vh;
+        background: var(--bg);
       }
 
       .shell {
-        width: min(1100px, calc(100% - 32px));
+        width: min(900px, calc(100% - 32px));
         margin: 0 auto;
-        padding: 32px 0 48px;
-      }
-
-      header {
-        display: grid;
-        gap: 10px;
-        margin-bottom: 24px;
+        padding: 40px 0 56px;
       }
 
       h1 {
-        margin: 0;
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        letter-spacing: -0.04em;
+        margin: 0 0 16px;
+        font-size: clamp(2rem, 4vw, 3.25rem);
+        line-height: 1.1;
+        font-weight: 700;
       }
 
-      .subtitle {
-        margin: 0;
-        max-width: 72ch;
+      p {
+        margin: 0 0 16px;
+        line-height: 1.7;
         color: var(--muted);
-        line-height: 1.6;
       }
 
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-
-      .card {
-        background: linear-gradient(180deg, rgba(17, 27, 45, 0.94), rgba(12, 19, 32, 0.96));
+      .panel {
+        background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 20px;
+        border-radius: 12px;
         padding: 20px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-      }
-
-      .stack {
-        display: grid;
-        gap: 14px;
-      }
-
-      .dropzone {
-        border: 1.5px dashed rgba(125, 211, 252, 0.35);
-        background: rgba(255, 255, 255, 0.03);
-        border-radius: 16px;
-        padding: 18px;
-        display: grid;
-        gap: 10px;
-      }
-
-      .dropzone strong {
-        font-size: 1rem;
-      }
-
-      input[type="file"] {
-        color: var(--muted);
       }
 
       .actions {
         display: flex;
-        gap: 12px;
-        align-items: center;
         flex-wrap: wrap;
-      }
-
-      button {
-        appearance: none;
-        border: 0;
-        border-radius: 999px;
-        padding: 11px 18px;
-        font-weight: 700;
-        color: #08111d;
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        cursor: pointer;
-      }
-
-      button:disabled {
-        opacity: 0.55;
-        cursor: not-allowed;
-      }
-
-      .hint {
-        color: var(--muted);
-        font-size: 0.93rem;
-        line-height: 1.5;
-      }
-
-      .preview,
-      .mask {
-        display: grid;
         gap: 12px;
+        margin: 24px 0 28px;
       }
 
-      .image-frame {
-        border-radius: 16px;
-        overflow: hidden;
-        background: var(--panel-2);
-        min-height: 320px;
-        border: 1px solid var(--border);
-        display: grid;
-        place-items: center;
-      }
-
-      .image-frame img {
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        display: block;
-      }
-
-      pre {
-        margin: 0;
-        padding: 14px;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.04);
-        color: #d9e6ff;
-        overflow: auto;
-        min-height: 160px;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-
-      .pill {
+      a.button {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 7px 12px;
-        border-radius: 999px;
-        background: rgba(125, 211, 252, 0.12);
-        color: #d4f4ff;
-        font-size: 0.9rem;
+        justify-content: center;
+        padding: 10px 16px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+        border: 1px solid var(--border);
+        color: var(--text);
+        background: #fff;
       }
 
-      @media (max-width: 860px) {
-        .grid {
+      a.primary {
+        background: var(--link);
+        border-color: var(--link);
+        color: #fff;
+      }
+
+      .notes {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .note {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      .note h2 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+      }
+
+      .note p {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 760px) {
+        .notes {
           grid-template-columns: 1fr;
         }
       }
@@ -177,66 +109,51 @@
   </head>
   <body>
     <main class="shell">
-      <header>
-        <div class="pill">Snow mask inference</div>
-        <h1>Upload an image and run the segmentation CNN</h1>
-        <p class="subtitle">
-          This demo uses the trained UNet-like snow segmentation model from the training directory.
-          For best results, upload a Sentinel-style 6-band patch file such as `.npz` with an `image`
-          array. Standard image files will still run through a fallback preprocessing path for quick
-          testing.
+      <div class="panel">
+        <h1>Snow Accum Analysis Segmentation Demo</h1>
+        <p>
+          The goal of this project is to identify and refine high quality regions of snow within overhead satellite imagery, for the purpose of snow accumulation tracking and weather prediction.
+          Data is sourced from the Sentinel Satellite Constellation: a fleet of imaging satellites that periodically image various locations on earth, and are capable of using onboard multispectral cameras to label landforms and features.
+          The focus of this project was overhead imagery from select North American Cities with snow cover during the winter: Boston, Buffalo, Chicago, New York.
+          Rather than using two wholly separate modeling techniques, this project combines neural network techniques and bayesian methods: with the neural network having the responsibility of a feature extractor, and the bayesian model serving to enhance and smooth the results. 
         </p>
-      </header>
+        <p>
+          The neural network method takes the form of a CNN, with a UNet shape. The general idea of UNets is that they consist of a contracting path, which downsamples and reduces the size of the image using convolution layers and pooling. After a bottleneck point, the model expands the image using convolution layers, back to the size of the initial input image. This results in a per-pixel mask, which identifies whether each pixel in an image contains snow or not.
+          CNNs using a UNet architecture are demonstrated to be highly effective at segmentation tasks. 
+        </p>
+        <p>
+          The Bayesian method...
+        </p>
+        <p>
+          This website demonstrates the CNN model, which was implemented in Python, and is thus a bit easier for us to showcase than the Bayesian implementation in R. The second page lets you choose a
+          city, pick one of five saved images for that city, and run the model on that sample.
+          Using saved images keeps the demo simple and avoids file upload problems during our in class poster session. 
+        </p>
+        <p>
+          After you run the model, the page shows both the predicted snow mask and an overlay of
+          the result on the original image. You can then choose another sample and run it again.
+        </p>
 
-      <section class="grid">
-        <div class="card stack">
-          <div class="dropzone">
-            <strong>Select an image</strong>
-            <input id="imageFile" type="file" accept=".npz,.png,.jpg,.jpeg,.webp,.tif,.tiff,image/*" />
-            <div class="hint">
-              The backend returns the predicted snow mask and an overlay. If you upload a regular
-              RGB image, the model still runs, but the result is only a rough proxy because the
-              network was trained on 6-band satellite data.
-            </div>
-          </div>
-
-          <div class="actions">
-            <button id="predictBtn" disabled>Run model</button>
-            <span id="status" class="hint">No file selected.</span>
-          </div>
-
-          <div class="preview">
-            <h2 style="margin: 0;">Input preview</h2>
-            <div class="image-frame">
-              <img id="inputPreview" alt="Selected input preview" />
-            </div>
-          </div>
+        <div class="actions">
+          <a class="button primary" href="/app">Open the demo</a>
+          <a class="button" href="/health">Check service health</a>
         </div>
+      </div>
 
-        <div class="card stack">
-          <div class="mask">
-            <h2 style="margin: 0;">Snow mask</h2>
-            <div class="image-frame">
-              <img id="maskPreview" alt="Predicted snow mask" />
-            </div>
-          </div>
-
-          <div class="mask">
-            <h2 style="margin: 0;">Overlay</h2>
-            <div class="image-frame">
-              <img id="overlayPreview" alt="Overlay of snow prediction" />
-            </div>
-          </div>
-
-          <div>
-            <h2 style="margin: 0 0 10px;">Response</h2>
-            <pre id="output">Waiting for an upload...</pre>
-          </div>
+      <section class="notes" style="margin-top: 20px;">
+        <div class="note">
+          <h2>What the CNN model does</h2>
+          <p>It labels each pixel as snow or not snow, as a binary classification task with some probability.</p>
+        </div>
+        <div class="note">
+          <h2>What you choose</h2>
+          <p>You select one of the supported cities and one of five bundled sample images. This is just to make testing the model smoother: rather than needing to find and upload images yourself, we provide a variety for you.</p>
+        </div>
+        <div class="note">
+          <h2>What you see</h2>
+          <p>The predicted mask, and the overlay over the image. The raw API response from running the model is also provided, if interested.</p>
         </div>
       </section>
     </main>
-
-    <script src="/app.js"></script>
   </body>
 </html>
-

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
-from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
@@ -16,25 +14,37 @@ from rasterio.windows import from_bounds
 from rasterio.warp import transform_bounds
 
 
+EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1"
+COLLECTION = "sentinel-2-l2a"
+IGNORE_LABEL = 255
+BANDS = ["B02", "B03", "B04", "B08", "B11", "B12"]
+
 CITY_BBOXES = {
     "boston": [-71.1912, 42.2279, -70.9860, 42.3995],
     "new_york": [-74.2591, 40.4774, -73.7004, 40.9176],
     "buffalo": [-78.9370, 42.8261, -78.7382, 42.9585],
     "chicago": [-87.9401, 41.6445, -87.5237, 42.0230],
-    "denver": [-105.1099, 39.6144, -104.6003, 39.9142],
-    "minneapolis": [-93.3800, 44.8650, -93.1550, 45.0600],
 }
 
-EARTH_SEARCH_URL = "https://earth-search.aws.element84.com/v1"
-DEFAULT_BANDS = ["B02", "B03", "B04", "B08", "B11", "B12"]
-IGNORE_LABEL = 255
+CITIES = ["boston", "new_york", "buffalo", "chicago"]
+YEARS = list(range(2015, 2025))
+SEASON_START = "11-15"
+SEASON_END = "02-28"
+MAX_ITEMS_PER_WINDOW = 5
+MAX_CLOUD = 25
+PATCH_SIZE = 256
+STRIDE = 256
+MIN_LABELED_RATIO = 0.50
+MIN_CLEAR_RATIO = 0.50
+BACKGROUND_KEEP_PROB = 0.10
+MIN_SNOW_RATIO_POSITIVE = 0.01
+OUTDIR = Path("snow_dataset_small")
 
-CLOUD_CLASSES = {3, 8, 9, 10}
-WATER_CLASS = 6
-SNOW_CLASS = 11
-NODATA_CLASSES = {0, 1}
+TRAIN_SPLIT = 0.70
+VAL_SPLIT = 0.15
+TEST_SPLIT = 0.15
 
-ASSET_KEYS = {
+ASSETS = {
     "B02": ["B02", "blue"],
     "B03": ["B03", "green"],
     "B04": ["B04", "red"],
@@ -46,72 +56,41 @@ ASSET_KEYS = {
     "SNW": ["SNW", "snw", "MSK_SNWPRB"],
 }
 
+NO_DATA = {0, 1}
+SHADOW = {2, 3}
+CLOUD = {8, 9, 10}
+WATER = 6
+SNOW = 11
 
-@dataclass
-class SplitConfig:
-    train: float
-    val: float
-    test: float
-    unit: str
-
-
-@dataclass
-class PatchConfig:
-    size: int
-    stride: int
-    min_labeled_ratio: float
-    min_clear_ratio: float
-    background_keep_prob: float
-    min_snow_ratio_positive: float
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build a CNN-ready Sentinel-2 snow dataset.")
-    parser.add_argument("--cities", nargs="+", default=["boston"], help="City names or 'all'.")
-    parser.add_argument("--city-file", default=None, help="Optional JSON file with custom city bboxes.")
-    parser.add_argument("--years", nargs="*", type=int, help="Explicit list of anchor years.")
-    parser.add_argument("--year-start", type=int, default=None)
-    parser.add_argument("--year-end", type=int, default=None)
-    parser.add_argument("--start-month-day", default="12-01")
-    parser.add_argument("--end-month-day", default="02-28")
-    parser.add_argument("--max-items-per-window", type=int, default=12)
-    parser.add_argument("--max-cloud", type=float, default=30.0)
-    parser.add_argument("--bands", nargs="+", default=DEFAULT_BANDS)
-    parser.add_argument("--patch-size", type=int, default=256)
-    parser.add_argument("--stride", type=int, default=256)
-    parser.add_argument("--min-labeled-ratio", type=float, default=0.50)
-    parser.add_argument("--min-clear-ratio", type=float, default=0.50)
-    parser.add_argument("--background-keep-prob", type=float, default=0.20)
-    parser.add_argument("--min-snow-ratio-positive", type=float, default=0.01)
-    parser.add_argument("--ndsi-threshold", type=float, default=0.35)
-    parser.add_argument("--min-green-reflectance", type=float, default=1200.0)
-    parser.add_argument("--cld-ignore-threshold", type=float, default=50.0)
-    parser.add_argument("--split-train", type=float, default=0.70)
-    parser.add_argument("--split-val", type=float, default=0.15)
-    parser.add_argument("--split-test", type=float, default=0.15)
-    parser.add_argument("--split-unit", choices=["scene", "city_year"], default="scene")
-    parser.add_argument("--outdir", default="outputs_cnn_dataset")
-    return parser.parse_args()
+SNW_STRONG = 35.0
+SNW_SUPPORT = 20.0
+CLD_STRONG = 65.0
+NDSI_STRONG = 0.42
+NDSI_RELAXED = 0.25
+MIN_GREEN = 0.10
+MIN_RGB_MEAN = 0.12
+MIN_RGB_MEAN_RELAXED = 0.10
+MIN_NIR = 0.10
+MAX_SWIR = 0.18
+WATER_NDWI = 0.15
+MAX_WATER_NIR = 0.12
+MAX_WATER_SWIR = 0.10
 
 
-def parse_month_day(text: str) -> tuple[int, int]:
-    try:
-        parsed = datetime.strptime(text, "%m-%d")
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"Bad month-day '{text}'. Use MM-DD.") from exc
-    return parsed.month, parsed.day
+def mmdd(text: str) -> tuple[int, int]:
+    dt = datetime.strptime(text, "%m-%d")
+    return dt.month, dt.day
 
 
-def build_windows(years: list[int], start_mmdd: str, end_mmdd: str) -> list[dict]:
-    start_month, start_day = parse_month_day(start_mmdd)
-    end_month, end_day = parse_month_day(end_mmdd)
-    wraps_year = (end_month, end_day) < (start_month, start_day)
+def build_windows(years: list[int]) -> list[dict[str, str | int]]:
+    start_month, start_day = mmdd(SEASON_START)
+    end_month, end_day = mmdd(SEASON_END)
+    wraps = (end_month, end_day) < (start_month, start_day)
 
     windows = []
     for year in years:
         start = date(year, start_month, start_day)
-        end_year = year + 1 if wraps_year else year
-        end = date(end_year, end_month, end_day)
+        end = date(year + 1 if wraps else year, end_month, end_day)
         windows.append(
             {
                 "window_year": year,
@@ -122,88 +101,7 @@ def build_windows(years: list[int], start_mmdd: str, end_mmdd: str) -> list[dict
     return windows
 
 
-def load_city_bboxes(city_file: str | None) -> dict[str, list[float]]:
-    bboxes = dict(CITY_BBOXES)
-    if not city_file:
-        return bboxes
-
-    payload = json.loads(Path(city_file).read_text())
-    if not isinstance(payload, dict):
-        raise ValueError("City file must be a JSON object like {'city': [west, south, east, north]}.")
-
-    for city, bbox in payload.items():
-        if not isinstance(bbox, list) or len(bbox) != 4:
-            raise ValueError(f"City '{city}' must map to a 4-element bbox list.")
-        bboxes[city.lower()] = [float(x) for x in bbox]
-
-    return bboxes
-
-
-def resolve_cities(requested: list[str], available: dict[str, list[float]]) -> list[str]:
-    if len(requested) == 1 and requested[0].lower() == "all":
-        return sorted(available)
-
-    cities = []
-    missing = []
-    for city in requested:
-        key = city.lower()
-        if key in available:
-            cities.append(key)
-        else:
-            missing.append(city)
-
-    if missing:
-        raise ValueError(
-            f"Unknown cities: {missing}. Available built-ins: {sorted(available)}. "
-            "You can also provide --city-file custom_cities.json"
-        )
-    return cities
-
-
-def resolve_years(years: list[int] | None, year_start: int | None, year_end: int | None) -> list[int]:
-    if years:
-        return sorted(set(int(year) for year in years))
-    if year_start is None or year_end is None:
-        raise ValueError("Provide either --years or both --year-start and --year-end.")
-    if year_end < year_start:
-        raise ValueError("--year-end must be >= --year-start")
-    return list(range(year_start, year_end + 1))
-
-
-def validate_args(args: argparse.Namespace) -> tuple[list[str], SplitConfig, PatchConfig, float | None]:
-    split_total = args.split_train + args.split_val + args.split_test
-    if abs(split_total - 1.0) > 1e-8:
-        raise ValueError("split-train + split-val + split-test must sum to 1.0")
-
-    bands = list(dict.fromkeys(args.bands))
-    if "B03" not in bands or "B11" not in bands:
-        raise ValueError("--bands must include B03 and B11.")
-    if args.patch_size <= 0 or args.stride <= 0:
-        raise ValueError("--patch-size and --stride must both be positive.")
-
-    split_cfg = SplitConfig(
-        train=args.split_train,
-        val=args.split_val,
-        test=args.split_test,
-        unit=args.split_unit,
-    )
-    patch_cfg = PatchConfig(
-        size=args.patch_size,
-        stride=args.stride,
-        min_labeled_ratio=args.min_labeled_ratio,
-        min_clear_ratio=args.min_clear_ratio,
-        background_keep_prob=args.background_keep_prob,
-        min_snow_ratio_positive=args.min_snow_ratio_positive,
-    )
-    cld_ignore_threshold = None if args.cld_ignore_threshold < 0 else args.cld_ignore_threshold
-    return bands, split_cfg, patch_cfg, cld_ignore_threshold
-
-
-def open_catalog() -> Client:
-    return Client.open(EARTH_SEARCH_URL)
-
-
-def bbox_to_polygon(bbox: list[float]) -> dict:
+def bbox_polygon(bbox: list[float]) -> dict:
     west, south, east, north = bbox
     return {
         "type": "Polygon",
@@ -211,40 +109,35 @@ def bbox_to_polygon(bbox: list[float]) -> dict:
     }
 
 
-def search_items(
-    catalog: Client,
-    bbox: list[float],
-    start_date: str,
-    end_date: str,
-    max_items: int | None,
-    max_cloud: float,
-) -> list:
+def open_catalog() -> Client:
+    return Client.open(EARTH_SEARCH_URL)
+
+
+def search_items(catalog: Client, bbox: list[float], start_date: str, end_date: str) -> list:
     search = catalog.search(
-        collections=["sentinel-2-l2a"],
-        intersects=bbox_to_polygon(bbox),
+        collections=[COLLECTION],
+        intersects=bbox_polygon(bbox),
         datetime=f"{start_date}/{end_date}",
     )
-    items = [
-        item for item in search.items()
-        if item.properties.get("eo:cloud_cover") is not None
-        and item.properties.get("eo:cloud_cover", 999.0) <= max_cloud
-    ]
-    items.sort(key=lambda item: (item.properties.get("eo:cloud_cover", 999.0), item.datetime or datetime.min))
-    if max_items and max_items > 0:
-        items = items[:max_items]
-    return items
+
+    items = []
+    for item in search.items():
+        cloud = item.properties.get("eo:cloud_cover")
+        if cloud is None or cloud > MAX_CLOUD:
+            continue
+        items.append(item)
+
+    items.sort(key=lambda item: (item.properties.get("eo:cloud_cover", 999), item.datetime or datetime.min))
+    return items[:MAX_ITEMS_PER_WINDOW]
 
 
-def get_asset_href(item, asset_name: str, required: bool = True) -> str | None:
-    for key in ASSET_KEYS[asset_name]:
+def asset_href(item, name: str, required: bool = True) -> str | None:
+    for key in ASSETS[name]:
         asset = item.assets.get(key)
         if asset is not None:
             return asset.href
     if required:
-        raise KeyError(
-            f"Could not find asset '{asset_name}'. "
-            f"Tried {ASSET_KEYS[asset_name]}; available keys: {list(item.assets.keys())}"
-        )
+        raise KeyError(f"Missing {name} asset. Available assets: {list(item.assets.keys())}")
     return None
 
 
@@ -257,119 +150,149 @@ def read_crop(
     with rasterio.open(href) as src:
         crop_bounds = transform_bounds("EPSG:4326", src.crs, *bbox_lonlat, densify_pts=21)
         window = from_bounds(*crop_bounds, transform=src.transform).round_offsets().round_lengths()
-        if window.width <= 0 or window.height <= 0:
-            raise ValueError("Crop window came out empty. Check the bbox.")
-
-        read_kwargs = {"window": window, "boundless": True, "masked": True}
-        if out_shape is not None:
-            read_kwargs["out_shape"] = (1, out_shape[0], out_shape[1])
-            read_kwargs["resampling"] = resampling
-
-        array = src.read(1, **read_kwargs)
-        if np.ma.isMaskedArray(array):
-            array = array.astype(np.float32).filled(np.nan)
-        else:
-            array = array.astype(np.float32)
-        return np.asarray(array, dtype=np.float32)
+        array = src.read(
+            1,
+            window=window,
+            boundless=True,
+            masked=True,
+            out_shape=(1, out_shape[0], out_shape[1]) if out_shape else None,
+            resampling=resampling if out_shape else Resampling.nearest,
+        )
+    if np.ma.isMaskedArray(array):
+        array = array.astype(np.float32).filled(np.nan)
+    return np.asarray(array, dtype=np.float32)
 
 
-def load_scene_arrays(item, bbox: list[float], bands: list[str]) -> dict[str, np.ndarray]:
-    reference = read_crop(get_asset_href(item, "B03"), bbox)
-    shape = reference.shape
+def load_scene(item, bbox: list[float]) -> dict[str, np.ndarray]:
+    arrays: dict[str, np.ndarray] = {}
 
-    arrays = {"B03": reference}
-    for band in bands:
+    green = read_crop(asset_href(item, "B03"), bbox)
+    shape = green.shape
+    arrays["B03"] = green
+
+    for band in BANDS:
         if band == "B03":
             continue
-        arrays[band] = read_crop(
-            get_asset_href(item, band),
-            bbox,
-            out_shape=shape,
-            resampling=Resampling.bilinear,
-        )
+        arrays[band] = read_crop(asset_href(item, band), bbox, out_shape=shape, resampling=Resampling.bilinear)
 
-    arrays["SCL"] = read_crop(
-        get_asset_href(item, "SCL"),
-        bbox,
-        out_shape=shape,
-        resampling=Resampling.nearest,
-    )
+    arrays["SCL"] = read_crop(asset_href(item, "SCL"), bbox, out_shape=shape, resampling=Resampling.nearest)
 
-    cld_href = get_asset_href(item, "CLD", required=False)
-    if cld_href is not None:
+    cld_href = asset_href(item, "CLD", required=False)
+    if cld_href:
         arrays["CLD"] = read_crop(cld_href, bbox, out_shape=shape, resampling=Resampling.bilinear)
 
-    snw_href = get_asset_href(item, "SNW", required=False)
-    if snw_href is not None:
+    snw_href = asset_href(item, "SNW", required=False)
+    if snw_href:
         arrays["SNW"] = read_crop(snw_href, bbox, out_shape=shape, resampling=Resampling.bilinear)
 
     return arrays
 
 
-def build_pseudo_labels(
-    arrays: dict[str, np.ndarray],
-    bands: list[str],
-    ndsi_threshold: float,
-    min_green_reflectance: float,
-    cld_ignore_threshold: float | None,
-) -> dict[str, np.ndarray]:
-    green = arrays["B03"]
-    swir = arrays["B11"]
+def norm_diff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    out = np.full(a.shape, np.nan, dtype=np.float32)
+    denom = a + b
+    mask = np.isfinite(a) & np.isfinite(b) & (denom != 0)
+    out[mask] = (a[mask] - b[mask]) / denom[mask]
+    return out
+
+
+def build_labels(arrays: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    blue = arrays["B02"] / 10000.0
+    green = arrays["B03"] / 10000.0
+    red = arrays["B04"] / 10000.0
+    nir = arrays["B08"] / 10000.0
+    swir1 = arrays["B11"] / 10000.0
     scl = arrays["SCL"]
 
     valid = np.isfinite(scl)
-    for band in bands:
+    for band in BANDS:
         valid &= np.isfinite(arrays[band])
 
     scl_int = np.full(scl.shape, -9999, dtype=np.int16)
     scl_int[np.isfinite(scl)] = scl[np.isfinite(scl)].astype(np.int16)
 
-    ndsi = np.full(green.shape, np.nan, dtype=np.float32)
-    denom = green + swir
-    good_ndsi = valid & (denom != 0)
-    ndsi[good_ndsi] = (green[good_ndsi] - swir[good_ndsi]) / denom[good_ndsi]
+    snw = arrays.get("SNW")
+    cld = arrays.get("CLD")
+    if snw is None:
+        snw = np.full(scl.shape, np.nan, dtype=np.float32)
+    if cld is None:
+        cld = np.full(scl.shape, np.nan, dtype=np.float32)
 
-    cloud_like = np.isin(scl_int, list(CLOUD_CLASSES | NODATA_CLASSES))
-    water = scl_int == WATER_CLASS
-    spectral_snow = valid & (green >= min_green_reflectance) & (ndsi >= ndsi_threshold)
-    scl_snow = valid & (scl_int == SNOW_CLASS)
+    ndsi = norm_diff(green, swir1)
+    ndwi = norm_diff(green, nir)
+    rgb_mean = (blue + green + red) / 3.0
 
-    ignore = ~valid | cloud_like | water
-    if cld_ignore_threshold is not None and "CLD" in arrays:
-        ignore |= np.isfinite(arrays["CLD"]) & (arrays["CLD"] >= cld_ignore_threshold)
+    water_like = (scl_int == WATER) | (
+        np.isfinite(ndwi)
+        & (ndwi > WATER_NDWI)
+        & (nir < MAX_WATER_NIR)
+        & (swir1 < MAX_WATER_SWIR)
+    )
 
-    clear_land = valid & ~ignore
-    positive = clear_land & (spectral_snow | scl_snow)
+    strong_snow = (
+        (scl_int == SNOW)
+        | (np.isfinite(snw) & (snw >= SNW_STRONG))
+        | (
+            np.isfinite(ndsi)
+            & (ndsi >= NDSI_STRONG)
+            & (green >= MIN_GREEN)
+            & (rgb_mean >= MIN_RGB_MEAN)
+            & (nir >= MIN_NIR)
+            & (swir1 <= MAX_SWIR)
+        )
+    )
 
-    label = np.full(green.shape, IGNORE_LABEL, dtype=np.uint8)
-    label[clear_land & ~positive] = 0
-    label[positive] = 1
+    supported_snow = (
+        np.isfinite(ndsi)
+        & (ndsi >= NDSI_RELAXED)
+        & (rgb_mean >= MIN_RGB_MEAN_RELAXED)
+        & (
+            (np.isfinite(snw) & (snw >= SNW_SUPPORT))
+            | (scl_int == SNOW)
+            | (np.isfinite(cld) & (cld < CLD_STRONG))
+            | (~np.isin(scl_int, list(CLOUD)))
+        )
+    )
 
+    snow = valid & ~water_like & (strong_snow | supported_snow)
+
+    ignore = (
+        ~valid
+        | np.isin(scl_int, list(NO_DATA | SHADOW))
+        | water_like
+        | (((np.isin(scl_int, list(CLOUD))) | (np.isfinite(cld) & (cld >= CLD_STRONG))) & ~snow)
+    )
+
+    label = np.full(scl.shape, IGNORE_LABEL, dtype=np.uint8)
+    label[valid & ~ignore] = 0
+    label[snow & ~ignore] = 1
+
+    clear_land = (label != IGNORE_LABEL).astype(np.uint8)
     return {
         "label": label,
         "ndsi": ndsi.astype(np.float32),
-        "clear_land": clear_land.astype(np.uint8),
+        "clear_land": clear_land,
+        "snw": snw.astype(np.float32),
+        "cld": cld.astype(np.float32),
     }
 
 
-def build_image_stack(arrays: dict[str, np.ndarray], bands: list[str]) -> np.ndarray:
-    return np.stack([arrays[band] for band in bands], axis=0).astype(np.float32) / 10000.0
+def build_image(arrays: dict[str, np.ndarray]) -> np.ndarray:
+    return np.stack([arrays[band] for band in BANDS], axis=0).astype(np.float32) / 10000.0
 
 
-def get_scene_datetime(item) -> str | None:
+def scene_datetime(item) -> str | None:
     if item.datetime is not None:
         return item.datetime.isoformat()
     return item.properties.get("datetime")
 
 
-def get_scene_date(item) -> str | None:
-    dt = get_scene_datetime(item)
-    if dt is None:
-        return None
-    return pd.to_datetime(dt).date().isoformat()
+def scene_date(item) -> str | None:
+    dt = scene_datetime(item)
+    return pd.to_datetime(dt).date().isoformat() if dt else None
 
 
-def make_patch_starts(length: int, patch_size: int, stride: int) -> list[int]:
+def patch_starts(length: int, patch_size: int, stride: int) -> list[int]:
     if length <= patch_size:
         return [0]
     starts = list(range(0, length - patch_size + 1, stride))
@@ -378,7 +301,7 @@ def make_patch_starts(length: int, patch_size: int, stride: int) -> list[int]:
     return starts
 
 
-def patch_metrics(label_patch: np.ndarray, clear_land_patch: np.ndarray) -> dict[str, float]:
+def patch_stats(label_patch: np.ndarray, clear_land_patch: np.ndarray) -> dict[str, float]:
     labeled = label_patch != IGNORE_LABEL
     labeled_ratio = float(np.mean(labeled))
     clear_ratio = float(np.mean(clear_land_patch > 0))
@@ -392,35 +315,28 @@ def patch_metrics(label_patch: np.ndarray, clear_land_patch: np.ndarray) -> dict
     }
 
 
-def hash_to_unit(text: str) -> float:
+def hash_unit(text: str) -> float:
     digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:15]
     return int(digest, 16) / float(16**15 - 1)
 
 
-def choose_split(city: str, window_year: int, item_id: str, split_cfg: SplitConfig) -> tuple[str, str]:
-    if split_cfg.unit == "scene":
-        split_key = item_id
-    elif split_cfg.unit == "city_year":
-        split_key = f"{city}::{window_year}"
-    else:
-        raise ValueError(f"Unknown split unit: {split_cfg.unit}")
-
-    draw = hash_to_unit(split_key)
-    if draw < split_cfg.train:
-        return "train", split_key
-    if draw < split_cfg.train + split_cfg.val:
-        return "val", split_key
-    return "test", split_key
+def choose_split(item_id: str) -> str:
+    draw = hash_unit(item_id)
+    if draw < TRAIN_SPLIT:
+        return "train"
+    if draw < TRAIN_SPLIT + VAL_SPLIT:
+        return "val"
+    return "test"
 
 
-def keep_patch(metrics: dict[str, float], patch_cfg: PatchConfig, sample_id: str) -> bool:
-    if metrics["labeled_ratio"] < patch_cfg.min_labeled_ratio:
+def keep_patch(stats: dict[str, float], sample_id: str) -> bool:
+    if stats["labeled_ratio"] < MIN_LABELED_RATIO:
         return False
-    if metrics["clear_ratio"] < patch_cfg.min_clear_ratio:
+    if stats["clear_ratio"] < MIN_CLEAR_RATIO:
         return False
-    if metrics["positive_among_labeled"] >= patch_cfg.min_snow_ratio_positive:
+    if stats["positive_among_labeled"] >= MIN_SNOW_RATIO_POSITIVE:
         return True
-    return hash_to_unit(sample_id) < patch_cfg.background_keep_prob
+    return hash_unit(sample_id) < BACKGROUND_KEEP_PROB
 
 
 def save_sample(path: Path, image: np.ndarray, label: np.ndarray, ndsi: np.ndarray) -> None:
@@ -433,92 +349,69 @@ def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2))
 
 
-def save_csv(path: Path, rows: list[dict], sort_columns: list[str]) -> pd.DataFrame:
-    frame = pd.DataFrame(rows)
-    if not frame.empty:
-        frame = frame.sort_values(sort_columns).reset_index(drop=True)
+def save_csv(path: Path, rows: list[dict], sort_by: list[str]) -> pd.DataFrame:
+    df = pd.DataFrame(rows)
+    if not df.empty:
+        df = df.sort_values(sort_by).reset_index(drop=True)
     path.parent.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(path, index=False)
-    return frame
+    df.to_csv(path, index=False)
+    return df
 
 
-def compute_train_stats(samples_dir: Path, patch_df: pd.DataFrame, bands: list[str]) -> dict:
-    if patch_df.empty:
-        return {"band_names": bands, "train_patch_count": 0, "mean": None, "std": None, "pixel_counts": None}
-
-    train_df = patch_df[patch_df["split"] == "train"].copy()
+def compute_train_stats(samples_dir: Path, patch_df: pd.DataFrame) -> dict:
+    train_df = patch_df[patch_df["split"] == "train"].copy() if not patch_df.empty else pd.DataFrame()
     if train_df.empty:
-        return {"band_names": bands, "train_patch_count": 0, "mean": None, "std": None, "pixel_counts": None}
+        return {"band_names": BANDS, "train_patch_count": 0, "mean": None, "std": None, "pixel_counts": None}
 
-    sums = np.zeros(len(bands), dtype=np.float64)
-    sums_sq = np.zeros(len(bands), dtype=np.float64)
-    counts = np.zeros(len(bands), dtype=np.float64)
+    sums = np.zeros(len(BANDS), dtype=np.float64)
+    sums_sq = np.zeros(len(BANDS), dtype=np.float64)
+    counts = np.zeros(len(BANDS), dtype=np.float64)
 
-    for rel_path in train_df["sample_relpath"].tolist():
-        payload = np.load(samples_dir / rel_path)
+    for relpath in train_df["sample_relpath"].tolist():
+        payload = np.load(samples_dir / relpath)
         image = payload["image"].astype(np.float64)
         label = payload["label"]
         valid = label != IGNORE_LABEL
 
-        for index in range(image.shape[0]):
-            values = image[index][valid]
+        for i in range(len(BANDS)):
+            values = image[i][valid]
             if values.size == 0:
                 continue
-            sums[index] += values.sum()
-            sums_sq[index] += np.square(values).sum()
-            counts[index] += values.size
+            sums[i] += values.sum()
+            sums_sq[i] += np.square(values).sum()
+            counts[i] += values.size
 
     mean = np.divide(sums, counts, out=np.zeros_like(sums), where=counts > 0)
-    variance = np.divide(sums_sq, counts, out=np.zeros_like(sums_sq), where=counts > 0) - np.square(mean)
-    variance = np.maximum(variance, 0.0)
-    std = np.sqrt(variance)
+    var = np.divide(sums_sq, counts, out=np.zeros_like(sums_sq), where=counts > 0) - np.square(mean)
+    var = np.maximum(var, 0.0)
+    std = np.sqrt(var)
 
     return {
-        "band_names": bands,
+        "band_names": BANDS,
         "train_patch_count": int(len(train_df)),
-        "mean": [float(value) for value in mean],
-        "std": [float(value) for value in std],
-        "pixel_counts": [int(value) for value in counts],
+        "mean": [float(x) for x in mean],
+        "std": [float(x) for x in std],
+        "pixel_counts": [int(x) for x in counts],
     }
 
 
-def process_scene(
-    item,
-    city: str,
-    bbox: list[float],
-    window_year: int,
-    bands: list[str],
-    split_cfg: SplitConfig,
-    patch_cfg: PatchConfig,
-    args: argparse.Namespace,
-    cld_ignore_threshold: float | None,
-    samples_dir: Path,
-) -> tuple[dict | None, list[dict]]:
-    split, split_key = choose_split(city, window_year, item.id, split_cfg)
-    dt = get_scene_datetime(item)
-    dt_day = get_scene_date(item)
+def process_scene(item, city: str, bbox: list[float], window_year: int, samples_dir: Path) -> tuple[dict | None, list[dict]]:
+    arrays = load_scene(item, bbox)
+    labels = build_labels(arrays)
+    image = build_image(arrays)
+    label = labels["label"]
+    ndsi = labels["ndsi"]
+    clear_land = labels["clear_land"]
 
-    arrays = load_scene_arrays(item, bbox, bands)
-    pseudo = build_pseudo_labels(
-        arrays=arrays,
-        bands=bands,
-        ndsi_threshold=args.ndsi_threshold,
-        min_green_reflectance=args.min_green_reflectance,
-        cld_ignore_threshold=cld_ignore_threshold,
-    )
-    image = build_image_stack(arrays, bands)
-    label = pseudo["label"]
-    ndsi = pseudo["ndsi"]
-    clear_land = pseudo["clear_land"]
-
-    if image.shape[1] < patch_cfg.size or image.shape[2] < patch_cfg.size:
-        print(
-            f"[skip] {city} | {item.id} is smaller than one patch "
-            f"({image.shape[1]}x{image.shape[2]} < {patch_cfg.size})"
-        )
+    if image.shape[1] < PATCH_SIZE or image.shape[2] < PATCH_SIZE:
+        print(f"[skip] {city} | {item.id} is smaller than one patch")
         return None, []
 
-    scene_stats = patch_metrics(label, clear_land)
+    split = choose_split(item.id)
+    dt = scene_datetime(item)
+    dt_day = scene_date(item)
+
+    scene_stats = patch_stats(label, clear_land)
     scene_row = {
         "city": city,
         "window_year": window_year,
@@ -526,190 +419,79 @@ def process_scene(
         "datetime": dt,
         "item_id": item.id,
         "split": split,
-        "split_key": split_key,
         "shape_h": int(image.shape[1]),
         "shape_w": int(image.shape[2]),
         "cloud_cover_tile_pct": item.properties.get("eo:cloud_cover"),
         "snow_cover_tile_pct": item.properties.get("eo:snow_cover"),
-        "sentinel_tile_id": item.properties.get("s2:mgrs_tile") or item.properties.get("mgrs:tile"),
         "scene_labeled_ratio": scene_stats["labeled_ratio"],
         "scene_clear_ratio": scene_stats["clear_ratio"],
         "scene_positive_ratio": scene_stats["positive_ratio"],
         "scene_positive_among_labeled": scene_stats["positive_among_labeled"],
     }
 
-    patch_rows = []
-    kept_count = 0
-    y_starts = make_patch_starts(image.shape[1], patch_cfg.size, patch_cfg.stride)
-    x_starts = make_patch_starts(image.shape[2], patch_cfg.size, patch_cfg.stride)
-
-    for y0 in y_starts:
-        for x0 in x_starts:
-            y1 = y0 + patch_cfg.size
-            x1 = x0 + patch_cfg.size
+    patch_rows: list[dict] = []
+    kept = 0
+    for y0 in patch_starts(image.shape[1], PATCH_SIZE, STRIDE):
+        for x0 in patch_starts(image.shape[2], PATCH_SIZE, STRIDE):
+            y1 = y0 + PATCH_SIZE
+            x1 = x0 + PATCH_SIZE
 
             image_patch = image[:, y0:y1, x0:x1]
             label_patch = label[y0:y1, x0:x1]
             ndsi_patch = ndsi[y0:y1, x0:x1]
             clear_patch = clear_land[y0:y1, x0:x1]
 
-            if image_patch.shape[1] != patch_cfg.size or image_patch.shape[2] != patch_cfg.size:
+            if image_patch.shape[1] != PATCH_SIZE or image_patch.shape[2] != PATCH_SIZE:
                 continue
 
-            metrics = patch_metrics(label_patch, clear_patch)
+            stats = patch_stats(label_patch, clear_patch)
             sample_id = f"{city}__wy{window_year}__{item.id}__y{y0:04d}_x{x0:04d}"
-            if not keep_patch(metrics, patch_cfg, sample_id):
+            if not keep_patch(stats, sample_id):
                 continue
 
-            sample_relpath = Path(split) / city / f"{sample_id}.npz"
-            save_sample(samples_dir / sample_relpath, image_patch, label_patch, ndsi_patch)
+            relpath = Path(split) / city / f"{sample_id}.npz"
+            save_sample(samples_dir / relpath, image_patch, label_patch, ndsi_patch)
 
             patch_rows.append(
                 {
                     "sample_id": sample_id,
-                    "sample_relpath": str(sample_relpath),
+                    "sample_relpath": str(relpath),
                     "city": city,
                     "window_year": window_year,
                     "date": dt_day,
                     "datetime": dt,
                     "item_id": item.id,
                     "split": split,
-                    "split_key": split_key,
                     "patch_y0": y0,
                     "patch_x0": x0,
-                    "patch_size": patch_cfg.size,
-                    "bands": ",".join(bands),
+                    "patch_size": PATCH_SIZE,
+                    "bands": ",".join(BANDS),
                     "cloud_cover_tile_pct": item.properties.get("eo:cloud_cover"),
                     "snow_cover_tile_pct": item.properties.get("eo:snow_cover"),
-                    "sentinel_tile_id": item.properties.get("s2:mgrs_tile") or item.properties.get("mgrs:tile"),
-                    **metrics,
+                    **stats,
                 }
             )
-            kept_count += 1
+            kept += 1
 
     print(
-        f"[ok] {city} | {item.id} | split={split} | "
-        f"shape={image.shape[1]}x{image.shape[2]} | kept={kept_count} | "
+        f"[ok] {city} | {item.id} | split={split} | kept={kept} | "
         f"snow_ratio={scene_stats['positive_among_labeled']:.4f}"
     )
     return scene_row, patch_rows
 
 
-def write_split_files(manifests_dir: Path, outdir: Path, patch_df: pd.DataFrame) -> dict[str, str]:
-    split_files = {}
-    for split_name in ["train", "val", "test"]:
-        split_df = patch_df[patch_df["split"] == split_name].copy() if not patch_df.empty else pd.DataFrame()
-        split_path = manifests_dir / f"{split_name}.csv"
-        split_df.to_csv(split_path, index=False)
-        split_files[split_name] = str(split_path.relative_to(outdir))
-    return split_files
-
-
-def build_summary(
-    args: argparse.Namespace,
-    bands: list[str],
-    cities: list[str],
-    years: list[int],
-    split_cfg: SplitConfig,
-    patch_cfg: PatchConfig,
-    cld_ignore_threshold: float | None,
-    split_files: dict[str, str],
-    window_df: pd.DataFrame,
-    scene_df: pd.DataFrame,
-    patch_df: pd.DataFrame,
-) -> dict:
-    return {
-        "bands": bands,
-        "cities": cities,
-        "years": years,
-        "season_window": {
-            "start_month_day": args.start_month_day,
-            "end_month_day": args.end_month_day,
-        },
-        "search": {
-            "max_items_per_window": args.max_items_per_window,
-            "max_cloud": args.max_cloud,
-        },
-        "patching": {
-            "patch_size": patch_cfg.size,
-            "stride": patch_cfg.stride,
-            "min_labeled_ratio": patch_cfg.min_labeled_ratio,
-            "min_clear_ratio": patch_cfg.min_clear_ratio,
-            "background_keep_prob": patch_cfg.background_keep_prob,
-            "min_snow_ratio_positive": patch_cfg.min_snow_ratio_positive,
-        },
-        "pseudo_labels": {
-            "ndsi_threshold": args.ndsi_threshold,
-            "min_green_reflectance": args.min_green_reflectance,
-            "cld_ignore_threshold": cld_ignore_threshold,
-            "ignore_label": IGNORE_LABEL,
-        },
-        "splits": {
-            "unit": split_cfg.unit,
-            "train": split_cfg.train,
-            "val": split_cfg.val,
-            "test": split_cfg.test,
-            "files": split_files,
-        },
-        "counts": {
-            "window_rows": int(len(window_df)),
-            "scene_rows": int(len(scene_df)),
-            "patch_rows": int(len(patch_df)),
-            "train_patches": int((patch_df["split"] == "train").sum()) if not patch_df.empty else 0,
-            "val_patches": int((patch_df["split"] == "val").sum()) if not patch_df.empty else 0,
-            "test_patches": int((patch_df["split"] == "test").sum()) if not patch_df.empty else 0,
-        },
-        "sample_format": {
-            "relative_root": "samples",
-            "file_type": "npz",
-            "arrays": {
-                "image": {
-                    "shape": ["C", "H", "W"],
-                    "dtype": "float32",
-                    "scale": "surface_reflectance_div_10000",
-                },
-                "label": {
-                    "shape": ["H", "W"],
-                    "dtype": "uint8",
-                    "values": {
-                        "0": "non_snow_clear_land",
-                        "1": "snow",
-                        str(IGNORE_LABEL): "ignore_cloud_water_invalid",
-                    },
-                },
-                "ndsi": {
-                    "shape": ["H", "W"],
-                    "dtype": "float32",
-                },
-            },
-        },
-    }
-
-
-def print_outputs(outdir: Path, manifests_dir: Path, metadata_dir: Path) -> None:
-    print(f"\nSaved dataset to: {outdir.resolve()}")
-    print("Wrote:")
-    print(f"  {manifests_dir / 'window_manifest.csv'}")
-    print(f"  {manifests_dir / 'scene_manifest.csv'}")
-    print(f"  {manifests_dir / 'patch_manifest.csv'}")
-    print(f"  {manifests_dir / 'train.csv'}")
-    print(f"  {manifests_dir / 'val.csv'}")
-    print(f"  {manifests_dir / 'test.csv'}")
-    print(f"  {metadata_dir / 'train_channel_stats.json'}")
-    print(f"  {metadata_dir / 'dataset_config.json'}")
-    print("Each .npz sample contains image [C,H,W], label [H,W], ndsi [H,W].")
+def write_split_csvs(manifests_dir: Path, patch_df: pd.DataFrame) -> dict[str, str]:
+    files = {}
+    for split in ["train", "val", "test"]:
+        split_df = patch_df[patch_df["split"] == split].copy() if not patch_df.empty else pd.DataFrame()
+        path = manifests_dir / f"{split}.csv"
+        split_df.to_csv(path, index=False)
+        files[split] = str(path)
+    return files
 
 
 def main() -> None:
-    args = parse_args()
-    bands, split_cfg, patch_cfg, cld_ignore_threshold = validate_args(args)
-
-    available_cities = load_city_bboxes(args.city_file)
-    selected_cities = resolve_cities(args.cities, available_cities)
-    years = resolve_years(args.years, args.year_start, args.year_end)
-    windows = build_windows(years, args.start_month_day, args.end_month_day)
-
-    outdir = Path(args.outdir)
+    outdir = OUTDIR
     samples_dir = outdir / "samples"
     manifests_dir = outdir / "manifests"
     metadata_dir = outdir / "metadata"
@@ -718,26 +500,28 @@ def main() -> None:
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     catalog = open_catalog()
-    window_rows = []
-    scene_rows = []
-    patch_rows = []
+    windows = build_windows(YEARS)
 
-    for city in selected_cities:
-        bbox = available_cities[city]
+    window_rows: list[dict] = []
+    scene_rows: list[dict] = []
+    patch_rows: list[dict] = []
+
+    for city in CITIES:
+        bbox = CITY_BBOXES[city]
         for window in windows:
-            window_year = int(window["window_year"])
+            year = int(window["window_year"])
             start_date = str(window["start_date"])
             end_date = str(window["end_date"])
             print(f"\n=== {city} | {start_date} -> {end_date} ===")
 
             try:
-                items = search_items(catalog, bbox, start_date, end_date, args.max_items_per_window, args.max_cloud)
+                items = search_items(catalog, bbox, start_date, end_date)
             except Exception as exc:
-                print(f"[warn] search failed for {city} {window_year}: {exc}")
+                print(f"[warn] search failed for {city} {year}: {exc}")
                 window_rows.append(
                     {
                         "city": city,
-                        "window_year": window_year,
+                        "window_year": year,
                         "start_date": start_date,
                         "end_date": end_date,
                         "items_found": 0,
@@ -749,7 +533,7 @@ def main() -> None:
             window_rows.append(
                 {
                     "city": city,
-                    "window_year": window_year,
+                    "window_year": year,
                     "start_date": start_date,
                     "end_date": end_date,
                     "items_found": len(items),
@@ -759,20 +543,9 @@ def main() -> None:
 
             for item in items:
                 try:
-                    scene_row, scene_patch_rows = process_scene(
-                        item=item,
-                        city=city,
-                        bbox=bbox,
-                        window_year=window_year,
-                        bands=bands,
-                        split_cfg=split_cfg,
-                        patch_cfg=patch_cfg,
-                        args=args,
-                        cld_ignore_threshold=cld_ignore_threshold,
-                        samples_dir=samples_dir,
-                    )
+                    scene_row, scene_patch_rows = process_scene(item, city, bbox, year, samples_dir)
                 except Exception as exc:
-                    print(f"[warn] failed to load {item.id} for {city} {window_year}: {exc}")
+                    print(f"[warn] failed to load {item.id} for {city} {year}: {exc}")
                     continue
 
                 if scene_row is not None:
@@ -780,46 +553,71 @@ def main() -> None:
                 patch_rows.extend(scene_patch_rows)
 
     window_df = save_csv(manifests_dir / "window_manifest.csv", window_rows, ["city", "window_year"])
-    scene_df = save_csv(
-        manifests_dir / "scene_manifest.csv",
-        scene_rows,
-        ["city", "window_year", "datetime", "item_id"],
-    )
+    scene_df = save_csv(manifests_dir / "scene_manifest.csv", scene_rows, ["city", "window_year", "datetime", "item_id"])
     patch_df = save_csv(
         manifests_dir / "patch_manifest.csv",
         patch_rows,
         ["split", "city", "window_year", "datetime", "item_id", "patch_y0", "patch_x0"],
     )
 
-    split_files = write_split_files(manifests_dir, outdir, patch_df)
+    split_files = write_split_csvs(manifests_dir, patch_df)
+    train_stats = compute_train_stats(samples_dir, patch_df)
 
-    train_stats = compute_train_stats(samples_dir, patch_df, bands)
     save_json(metadata_dir / "train_channel_stats.json", train_stats)
-
+    save_json(metadata_dir / "label_map.json", {"0": "non_snow_clear_land", "1": "snow", str(IGNORE_LABEL): "ignore"})
     save_json(
-        metadata_dir / "label_map.json",
+        metadata_dir / "dataset_config.json",
         {
-            "0": "non_snow_clear_land",
-            "1": "snow",
-            str(IGNORE_LABEL): "ignore_cloud_water_invalid",
+            "cities": CITIES,
+            "years": YEARS,
+            "season_start": SEASON_START,
+            "season_end": SEASON_END,
+            "max_items_per_window": MAX_ITEMS_PER_WINDOW,
+            "max_cloud": MAX_CLOUD,
+            "bands": BANDS,
+            "patch_size": PATCH_SIZE,
+            "stride": STRIDE,
+            "min_labeled_ratio": MIN_LABELED_RATIO,
+            "min_clear_ratio": MIN_CLEAR_RATIO,
+            "background_keep_prob": BACKGROUND_KEEP_PROB,
+            "min_snow_ratio_positive": MIN_SNOW_RATIO_POSITIVE,
+            "split": {"train": TRAIN_SPLIT, "val": VAL_SPLIT, "test": TEST_SPLIT, "unit": "scene"},
+            "labeling": {
+                "snw_strong": SNW_STRONG,
+                "snw_support": SNW_SUPPORT,
+                "cld_strong": CLD_STRONG,
+                "ndsi_strong": NDSI_STRONG,
+                "ndsi_relaxed": NDSI_RELAXED,
+                "min_green": MIN_GREEN,
+                "min_rgb_mean": MIN_RGB_MEAN,
+                "min_nir": MIN_NIR,
+                "max_swir": MAX_SWIR,
+                "water_ndwi": WATER_NDWI,
+                "max_water_nir": MAX_WATER_NIR,
+                "max_water_swir": MAX_WATER_SWIR,
+            },
+            "counts": {
+                "windows": int(len(window_df)),
+                "scenes": int(len(scene_df)),
+                "patches": int(len(patch_df)),
+                "train_patches": int((patch_df["split"] == "train").sum()) if not patch_df.empty else 0,
+                "val_patches": int((patch_df["split"] == "val").sum()) if not patch_df.empty else 0,
+                "test_patches": int((patch_df["split"] == "test").sum()) if not patch_df.empty else 0,
+            },
+            "split_files": split_files,
         },
     )
 
-    summary = build_summary(
-        args=args,
-        bands=bands,
-        cities=selected_cities,
-        years=years,
-        split_cfg=split_cfg,
-        patch_cfg=patch_cfg,
-        cld_ignore_threshold=cld_ignore_threshold,
-        split_files=split_files,
-        window_df=window_df,
-        scene_df=scene_df,
-        patch_df=patch_df,
-    )
-    save_json(metadata_dir / "dataset_config.json", summary)
-    print_outputs(outdir, manifests_dir, metadata_dir)
+    print(f"\nSaved dataset to: {outdir.resolve()}")
+    print("Wrote:")
+    print(f"  {manifests_dir / 'window_manifest.csv'}")
+    print(f"  {manifests_dir / 'scene_manifest.csv'}")
+    print(f"  {manifests_dir / 'patch_manifest.csv'}")
+    print(f"  {manifests_dir / 'train.csv'}")
+    print(f"  {manifests_dir / 'val.csv'}")
+    print(f"  {manifests_dir / 'test.csv'}")
+    print(f"  {metadata_dir / 'train_channel_stats.json'}")
+    print(f"  {metadata_dir / 'dataset_config.json'}")
 
 
 if __name__ == "__main__":

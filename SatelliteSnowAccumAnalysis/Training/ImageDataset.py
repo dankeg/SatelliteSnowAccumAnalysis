@@ -1,5 +1,3 @@
-"""Dataset utilities for Sentinel snow segmentation."""
-
 from pathlib import Path
 import csv
 import json
@@ -31,8 +29,6 @@ class ImageDataset(Dataset):
         self.metadata_file = Path(metadata_file)
 
         if samples_root is None:
-            # assumes metadata_file looks like: <outdir>/manifests/train.csv
-            # and samples live at: <outdir>/samples/...
             self.samples_root = self.metadata_file.parent.parent / "samples"
         else:
             self.samples_root = Path(samples_root)
@@ -47,7 +43,6 @@ class ImageDataset(Dataset):
                 mean = torch.tensor(stats["mean"], dtype=torch.float32).view(-1, 1, 1)
                 std = torch.tensor(stats["std"], dtype=torch.float32).view(-1, 1, 1)
 
-                # just in case the stats file itself has bad values
                 self.mean = torch.nan_to_num(mean, nan=0.0, posinf=0.0, neginf=0.0)
                 self.std = torch.nan_to_num(std, nan=1.0, posinf=1.0, neginf=1.0)
 
@@ -65,14 +60,13 @@ class ImageDataset(Dataset):
 
         payload = np.load(sample_path)
 
-        image = torch.from_numpy(payload["image"]).float()   # [C, H, W]
-        label = torch.from_numpy(payload["label"]).long()    # [H, W]
+        image = torch.from_numpy(payload["image"]).float()  
+        label = torch.from_numpy(payload["label"]).long()  
 
-        # remove bad numeric values before they can poison the model
         image = torch.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0)
 
         if self.include_ndsi and "ndsi" in payload:
-            ndsi = torch.from_numpy(payload["ndsi"]).float().unsqueeze(0)  # [1, H, W]
+            ndsi = torch.from_numpy(payload["ndsi"]).float().unsqueeze(0) 
             ndsi = torch.nan_to_num(ndsi, nan=0.0, posinf=0.0, neginf=0.0)
             image = torch.cat([image, ndsi], dim=0)
 
@@ -103,7 +97,6 @@ class ImageDataset(Dataset):
 
             image = (image - mean) / (std + 1e-6)
 
-        # do this again after normalization in case stats were bad
         image = torch.nan_to_num(image, nan=0.0, posinf=0.0, neginf=0.0)
 
         if self.return_meta:

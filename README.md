@@ -1,5 +1,22 @@
 # SatelliteSnowAccumAnalysis
-DS4520 Project for Predicting Changes in Snow Accumulation from Satellite Imagery!
+DS4520 Project for Analyzing Snow Accumulation in Satellite Imagery!
+
+The goal of this project is to identify and refine high quality regions of snow within overhead satellite imagery, for the purpose of snow accumulation tracking and weather prediction.
+Data is sourced from the Sentinel Satellite Constellation: a fleet of imaging satellites that periodically image various locations on earth, and are capable of using onboard multispectral cameras to label landforms and features.
+The focus of this project was overhead imagery from select North American Cities with snow cover during the winter: Boston, Buffalo, Chicago, New York.
+Rather than using two wholly separate modeling techniques, this project combines neural network techniques and bayesian methods: with the neural network having the responsibility of a feature extractor, and the bayesian model serving to enhance and smooth the results. 
+
+The neural network method takes the form of a CNN, with a UNet shape. The general idea of UNets is that they consist of a contracting path, which downsamples and reduces the size of the image using convolution layers and pooling. After a bottleneck point, the model expands the image using convolution layers, back to the size of the initial input image. This results in a per-pixel mask, which identifies whether each pixel in an image contains snow or not.
+CNNs using a UNet architecture are demonstrated to be highly effective at segmentation tasks. 
+
+The second half consist of a Bayesian Spatial Segmentation stage. It treats
+each pixel probability (derived from logits) as a noisy observation of an un-
+derlying latent snow state. The observed values are treated as conditionally
+independent and assumed to follow a Bernoulli likelihood. Spatial structure
+is then incorporated through a Hidden Markov Random Field prior, which
+encourages neighboring pixels to share the same label. The posterior distri-
+bution is then approximated with Gibbs sampling, which updates each pixel
+based on its observed state and the state of its neighboring pixels.
 
 ## Initial Project Structure
 The core training and inference code currently lives in:

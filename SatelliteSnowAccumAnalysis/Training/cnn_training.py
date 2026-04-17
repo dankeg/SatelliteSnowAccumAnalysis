@@ -1,5 +1,3 @@
-"""Train the snow segmentation CNN and save metrics/plots."""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +10,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from SatelliteSnowAccumAnalysis.Training.ImageDataset import ImageDataset
-from SatelliteSnowAccumAnalysis.Training.cnn_segmentation import UNetLikeCNN
+from SatelliteSnowAccumAnalysis.Training.cnn_segmentation import SnowCNN
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -179,7 +177,7 @@ def main() -> None:
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = UNetLikeCNN(in_channels=6, num_classes=2).to(device)
+    model = SnowCNN(in_channels=6, num_classes=2).to(device)
 
     loss_fn = nn.CrossEntropyLoss(ignore_index=IGNORE_LABEL)
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)

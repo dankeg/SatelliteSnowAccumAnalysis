@@ -1,5 +1,3 @@
-"""Simple UNet-like snow segmentation model and helpers."""
-
 from __future__ import annotations
 
 from io import BytesIO
@@ -33,7 +31,7 @@ class DoubleConv(nn.Module):
         return self.layers(x)
 
 
-class UNetLikeCNN(nn.Module):
+class SnowCNN(nn.Module):
     def __init__(self, in_channels: int = 6, num_classes: int = 2):
         super().__init__()
 
@@ -84,7 +82,7 @@ def load_channel_stats(stats_file: str | Path = STATS_FILE) -> tuple[torch.Tenso
 def load_model(checkpoint_path=CHECKPOINT, device=None):
     device = device or torch.device("cpu")
 
-    model = UNetLikeCNN().to(device)
+    model = SnowCNN().to(device)
     state_dict = torch.load(checkpoint_path, map_location=device)
 
     fixed_state_dict = {}

@@ -1,5 +1,3 @@
-"""Export the base image and the two class logit CSVs for each saved snow sample."""
-
 from pathlib import Path
 
 import numpy as np

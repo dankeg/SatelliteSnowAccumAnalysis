@@ -122,7 +122,14 @@
           CNNs using a UNet architecture are demonstrated to be highly effective at segmentation tasks. 
         </p>
         <p>
-          The Bayesian method...
+          The second half consist of a Bayesian Spatial Segmentation stage. It treats
+          each pixel probability (derived from logits) as a noisy observation of an un-
+          derlying latent snow state. The observed values are treated as conditionally
+          independent and assumed to follow a Bernoulli likelihood. Spatial structure
+          is then incorporated through a Hidden Markov Random Field prior, which
+          encourages neighboring pixels to share the same label. The posterior distri-
+          bution is then approximated with Gibbs sampling, which updates each pixel
+          based on its observed state and the state of its neighboring pixels.
         </p>
         <p>
           This website demonstrates the CNN model, which was implemented in Python, and is thus a bit easier for us to showcase than the Bayesian implementation in R. The second page lets you choose a
